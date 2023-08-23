@@ -7,6 +7,7 @@ from PIL import Image
 import os
 import os.path
 from utils.logger import logger
+import numpy as np
 
 class EpicKitchensDataset(data.Dataset, ABC):
     def __init__(self, split, modalities, mode, dataset_conf, num_frames_per_clip, num_clips, dense_sampling,
@@ -66,26 +67,123 @@ class EpicKitchensDataset(data.Dataset, ABC):
             self.model_features = pd.merge(self.model_features, self.list_file, how="inner", on="uid")
 
     def _get_train_indices(self, record, modality='RGB'):
-        ##################################################################
-        # TODO: implement sampling for training mode                     #
-        # Give the record and the modality, this function should return  #
-        # a list of integers representing the frames to be selected from #
-        # the video clip.                                                #
-        # Remember that the returned array should have size              #
-        #           num_clip x num_frames_per_clip                       #
-        ##################################################################
-        raise NotImplementedError("You should implement _get_train_indices")
+        
+        """
+        Generates frame indices for training video clips based on given parameters.
 
-    def _get_val_indices(self, record, modality):
-        ##################################################################
-        # TODO: implement sampling for testing mode                      #
-        # Give the record and the modality, this function should return  #
-        # a list of integers representing the frames to be selected from #
-        # the video clip.                                                #
-        # Remember that the returned array should have size              #
-        #           num_clip x num_frames_per_clip                       #
-        ##################################################################
-        raise NotImplementedError("You should implement _get_val_indices")
+        Args:
+            record (VideoRecord): An object containing video-related information.
+            modality (str, optional): The modality for which indices are generated (default is 'RGB').
+
+        Returns:
+            list: A list of frame indices for training video clips.
+        """
+        #   Initialize a list to store frame indices
+        indices=[]
+
+        # Extract relevant properties from input parameters and class properties
+        num_frames=record.num_frames[modality]
+        num_clips = self.num_clips
+        num_frames_per_clip = self.num_frames_per_clip[modality]
+        stride = self.stride
+        duration = record.num_frames[modality] // num_clips
+        half_duration = duration // 2
+        
+        # Calculate central frames around which clips will be sampled
+        #  get N central frames, N =num_clips
+        centroids = np.linspace(half_duration, num_frames - half_duration, num= num_clips, dtype=int)
+
+        # Check if dense sampling is specified
+        if self.dense_sampling[modality]:
+            # Dense Sampling
+            for _ , center in enumerate(centroids):
+                half_clip_frames = num_frames_per_clip // 2
+                first_frame = center - half_clip_frames * stride
+                end_frame =  center + half_clip_frames * stride
+
+                # Generate dense sampling
+                dense_sampling = np.arange(first_frame, end_frame, self.stride)
+
+                # Ensure values are within the desired range (Not less than 0 or greater than num_frames)
+                dense_sampling = np.clip(dense_sampling, 0, num_frames)
+
+                # Add dense sampled indices to the list
+                indices.extend(dense_sampling)
+            
+        else:
+            # Uniform Sampling
+            for _ , center in enumerate(centroids):
+                first_frame=  center - half_duration
+                end_frame= center + half_duration - 1
+                
+                # Generate uniform sampling
+                uniform_sampling = np.linspace(first_frame, end_frame, num=num_frames_per_clip, dtype=int)
+                
+                # Add uniformly sampled indices to the list
+                indices.extend(uniform_sampling)
+            
+
+        return indices
+
+
+    def _get_val_indices(self, record, modality='RGB'):
+        
+        """
+        Generates frame indices for testing video clips based on given parameters.
+
+        Args:
+            record (VideoRecord): An object containing video-related information.
+            modality (str, optional): The modality for which indices are generated (default is 'RGB').
+
+        Returns:
+            list: A list of frame indices for testing video clips.
+        """
+        #   Initialize a list to store frame indices
+        indices=[]
+
+        # Extract relevant properties from input parameters and class properties
+        num_frames=record.num_frames[modality]
+        num_clips = self.num_clips
+        num_frames_per_clip = self.num_frames_per_clip[modality]
+        stride = self.stride
+        duration = record.num_frames[modality] // num_clips
+        half_duration = duration // 2
+        
+        # Calculate central frames around which clips will be sampled
+        #  get N central frames, N =num_clips
+        centroids = np.linspace(half_duration, num_frames - half_duration, num= num_clips, dtype=int)
+
+        # Check if dense sampling is specified
+        if self.dense_sampling[modality]:
+            # Dense Sampling
+            for _ , center in enumerate(centroids):
+                half_clip_frames = num_frames_per_clip // 2
+                first_frame = center - half_clip_frames * stride
+                end_frame =  center + half_clip_frames * stride
+
+                # Generate dense sampling
+                dense_sampling = np.arange(first_frame, end_frame, self.stride)
+
+                # Ensure values are within the desired range (Not less than 0 or greater than num_frames)
+                dense_sampling = np.clip(dense_sampling, 0, num_frames)
+
+                # Add dense sampled indices to the list
+                indices.extend(dense_sampling)
+            
+        else:
+            # Uniform Sampling
+            for _ , center in enumerate(centroids):
+                first_frame=  center - half_duration
+                end_frame= center + half_duration - 1
+                
+                # Generate uniform sampling
+                uniform_sampling = np.linspace(first_frame, end_frame, num=num_frames_per_clip, dtype=int)
+                
+                # Add uniformly sampled indices to the list
+                indices.extend(uniform_sampling)
+            
+
+        return indices
 
     def __getitem__(self, index):
 
