@@ -1,39 +1,48 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+from utils.logger import logger
 from models import LSTM
+from sklearn.utils import shuffle
 import sys
-import pickle
 import numpy as np
-from utils.utils import load_features_labels
+import pickle
+import time
+
+# Set random seed for reproducibility
+np.random.seed(13696641)
+torch.manual_seed(13696641)
+
+class CustomDataLoader():
+    def __init__(self, data):
+        self.data = np.array(data["features_RGB"])
+        self.labels = np.array(data["labels"])
+        self.shuffle_data()
+    
+    def __len__(self):
+        return len(self.data)
+
+    def shuffle_data(self):
+        self.data, self.labels = shuffle(self.data, self.labels)
+
+    def __getitem__(self, index):
+        record = self.data[index]
+        label = self.labels[index]
+
+        return record, label
 
 def main():
-    if len(sys.argv) != 7:
-        print("Usage: python train_lstm.py <path_train> <path_test> <learning_rate> <momentum> <epochs>")
-        sys.exit(1)
-
     path_train = sys.argv[1]
-    path_test = sys.argv[2]
+    path_val = sys.argv[2]
     learning_rate = float(sys.argv[3])
-    momentum = float(sys.argv[4])
-    epochs = int(sys.argv[5])
-    model_description = sys.argv[6]
-    # Set random seed for reproducibility
-    torch.manual_seed(42)
+    epochs = int(sys.argv[4])
 
-    # importing datasets #
+    # Load, unpickle and prepare data
+    train_loader, val_loader = load_and_prepare_data(path_train, path_val, batch_size=32)
 
-    # Load and preprocess your dataset
-    train_loader, test_loader = load_data(path_train, path_test)
-
-    # Initialize your LSTM model
-
-    # MODEL initialization
-    if model_description == "LSTM":
-        model = LSTM()
-    else:
-        raise NotImplementedError("This model is not implemented")
+    # Initialize LSTM model
+    model = LSTM()
 
     # Move model to the specified device (cpu or cuda)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -47,27 +56,37 @@ def main():
     train(model, train_loader, criterion, optimizer, num_epochs=epochs, device=device)
 
     # Validate the model
-    validate(model, test_loader, device=device)
+    validate(model, val_loader, device=device)
 
 
-def load_data(path_train, path_test):
+def load_and_prepare_data(path_train, path_val, batch_size=32):
+    # Load the data from the pickle file
+    with open(path_train, 'rb') as file:
+        train_unpickled = pickle.load(file)
 
-    # Load your dataset
-    train_dataset = load_features_labels(path_train)
-    test_dataset = load_features_labels(path_test)
+    # Load the data from the pickle file
+    with open(path_val, 'rb') as file:
+        val_unpickled = pickle.load(file)  
 
-    # Create data loaders
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=64, shuffle=False)
+    # Create CustomDataLoader instances for training and validation
+    train_data = CustomDataLoader(train_unpickled)
+    val_data = CustomDataLoader(val_unpickled)
 
-    return train_loader, test_loader
+    # Create DataLoader instances for training and validation
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=True)
+
+    return train_loader, val_loader
 
 def train(model, train_loader, criterion, optimizer, num_epochs, device):
     model.train()  # Set the model to training mode
+    start_time = time.time()  # Record the start time of the epoch
+
     for epoch in range(num_epochs):
         running_loss = 0.0
         correct = 0
         total = 0
+
         for inputs, labels in train_loader:
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()  # Zero the gradient buffers
@@ -79,8 +98,14 @@ def train(model, train_loader, criterion, optimizer, num_epochs, device):
             _, predicted = torch.max(outputs, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
+
+        end_time = time.time()  # Record the end time of the epoch
+        epoch_time = end_time - start_time  # Calculate the time taken for this epoch
+        
         accuracy = 100 * correct / total
-        print(f"Epoch {epoch + 1}, Loss: {running_loss / len(train_loader)}, Accuracy: {accuracy:.2f}%")
+        logger.info(f"Epoch {epoch + 1}, Loss: {running_loss / len(train_loader)}, Accuracy: {accuracy:.2f}%, Epoch Time: {epoch_time:.2f} seconds")
+    total_training_time = time.time() - start_time  # Calculate the total training time
+    logger.info(f"Total Training Time: {total_training_time:.2f} seconds")
 
 def validate(model, test_loader, device, num_classes=8):
     model.eval()  # Set the model to evaluation mode
@@ -103,9 +128,9 @@ def validate(model, test_loader, device, num_classes=8):
     overall_accuracy = 100 * sum(correct_per_class) / sum(total_per_class) if sum(total_per_class) > 0 else 0.0
 
     for i in range(num_classes):
-        print(f"Class {i} Accuracy: {accuracy_per_class[i]:.2f}%")
+        logger.info(f"Class {i} Accuracy: {accuracy_per_class[i]:.2f}%")
 
-    print(f"Overall Validation Accuracy: {overall_accuracy:.2f}%")
+    logger.info(f"Overall Validation Accuracy: {overall_accuracy:.2f}%")
 
 
 if __name__ == '__main__':

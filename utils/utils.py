@@ -3,16 +3,6 @@ import torch
 import pickle
 import numpy as np
 
-def load_features_labels(path, transform=None, concatenate=False):
-    # Load data from the pickle file
-    with open(path, 'rb') as file:
-        data_dict = pickle.load(file)
-
-    # Extract features and labels
-    features = np.array([entry["features_RGB"] for entry in data_dict["features"]])
-    labels = np.array(data_dict["labels"])
-
-    return features, labels
 def get_domains_and_labels(args):
     num_verbs = 8
     domains = {'D1': 8, 'D2': 1, 'D3': 22}
